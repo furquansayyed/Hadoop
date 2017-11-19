@@ -1,0 +1,341 @@
+************************H2: Multinode step execution*******************
+
+sudo apt-get update && sudo apt-get dist-upgrade -y && sudo reboot
+
+-----------------take permission of repository-------------------------
+sudo add-apt-repository -y ppa:webupd8team/java
+
+-----as it is not loaded on RAM yet need to get it from HDD------------
+sudo apt-get update
+
+------------------------install java8----------------------------------
+sudo apt-get install -y oracle-java8-installer
+
+---------downloading Hadoop n untar n moving it------------------------
+wget https://archive.apache.org/dist/hadoop/common/hadoop-2.7.2/hadoop-2.7.2.tar.gz -P ~/Downloads
+
+sudo tar zxf ~/Downloads/hadoop-* -C /usr/local
+
+sudo mv /usr/local/hadoop-* /usr/local/hadoop
+
+-------first we did it via PWD this time we did it readlink------------
+readlink -f $(which java)
+
+--------------------editing bashrc file--------------------------------
+cat >>$HOME/.bashrc <<EOL
+# -- HADOOP ENVIRONMENT VARIABLES START -- #
+export JAVA_HOME=/usr/lib/jvm/java-8-oracle
+export HADOOP_HOME=/usr/local/hadoop
+export PATH=\$PATH:\$HADOOP_HOME/bin
+export PATH=\$PATH:\$HADOOP_HOME/sbin
+export PATH=\$PATH:/usr/local/hadoop/bin/
+export HADOOP_MAPRED_HOME=\$HADOOP_HOME
+export HADOOP_COMMON_HOME=\$HADOOP_HOME
+export HADOOP_HDFS_HOME=\$HADOOP_HOME
+export YARN_HOME=\$HADOOP_HOME
+export HADOOP_CONF_DIR=/usr/local/hadoop/etc/hadoop
+export PDSH_RCMD_TYPE=ssh
+# -- HADOOP ENVIRONMENT VARIABLES END -- #
+EOL
+
+bash
+
+------------------------take ownership of hadoop-----------------------
+sudo chown -R ubuntu:ubuntu /usr/local/hadoop
+
+----------------------editing hadoop env file--------------------------
+sudo su -c 'echo export JAVA_HOME=/usr/lib/jvm/java-8-oracle >> /usr/local/hadoop/etc/hadoop/hadoop-env.sh'
+
+sudo su -c 'echo export HADOOP_LOG_DIR=/var/log/hadoop/ >> /usr/local/hadoop/etc/hadoop/hadoop-env.sh'
+
+------log folder for log analysis (separating the log files)-----------
+sudo mkdir /var/log/hadoop/
+
+sudo chown ubuntu:ubuntu -R /var/log/hadoop
+
+----------------------------disable SELinux----------------------------
+sudo apt-get install selinux-utils
+
+setenforce 0
+
+Optional:
+cat /etc/selinux/config (you'll not find it, if you want to enable/disable it create the file by nano and paste the details given below)
+SELINUX=disabled
+SELINUXTYPE=targeted
+SETLOCALDEFS=0
+
+-----------------------------disable IPV6------------------------------
+cat /proc/sys/net/ipv6/conf/all/disable_ipv6
+
+whatis sysctl
+
+sudo sysctl -p
+
+sudo su -c 'cat >>/etc/sysctl.conf <<EOL
+net.ipv6.conf.all.disable_ipv6 =1
+net.ipv6.conf.default.disable_ipv6 =1
+net.ipv6.conf.lo.disable_ipv6 =1
+EOL'
+
+sudo sysctl -p
+
+cat /proc/sys/net/ipv6/conf/all/disable_ipv6
+
+-------------------------disable internal firewall---------------------
+sudo iptables -L -n -v
+
+sudo ufw status verbose 
+
+>disabling THC (defragmentation):
+cat /sys/kernel/mm/transparent_hugepage/defrag
+
+sudo su -c 'cat >>/etc/rc.local <<EOL
+if test -f /sys/kernel/mm/transparent_hugepage/enabled; then
+  echo never > /sys/kernel/mm/transparent_hugepage/enabled
+fi
+if test -f /sys/kernel/mm/transparent_hugepage/defrag; then
+   echo never > /sys/kernel/mm/transparent_hugepage/defrag 
+fi
+exit 0
+EOL'
+
+sudo nano /etc/rc.local
+#remove exit 0#
+
+sudo -i
+source /etc/rc.local
+
+cat /sys/kernel/mm/transparent_hugepage/defrag
+
+----------------------------disable swappiness-------------------------
+sudo sysctl -a | grep vm.swappiness
+
+sudo su -c 'cat >>/etc/sysctl.conf <<EOL
+'vm.swappiness=0'
+EOL'
+
+sudo sysctl -p
+
+sudo sysctl -a | grep vm.swappiness
+
+
+------------------configuring time date NTP server---------------------
+timedatectl status
+
+timedatectl list-timezones | grep Asia/Kolkata
+
+sudo timedatectl set-timezone Asia/Kolkata
+
+timedatectl status
+
+sudo ntpq -p
+
+sudo apt-get install ntp -y
+
+sudo ntpq -p
+
+timedatectl status
+
+sudo nano /etc/ntp.conf (incase if clients want to use their ntp)
+
+-------------------------root reserved space---------------------------
+sudo tune2fs -m 0 /dev/xvda1
+
+lsblk
+
+mkfs.ext4 -m 0 /dev/xvda1
+
+sudo file -sL /dev/xvda1
+
+------------------configuring password less login----------------------
+sudo su -c touch /home/ubuntu/.ssh/config; echo -e \ "Host *\n StrictHostKeyChecking no\n  UserKnownHostsFile=/dev/null" \ > ~/.ssh/config
+
+echo -e  'y\n'| ssh-keygen -t rsa -P "" -f $HOME/.ssh/id_rsa
+
+cat $HOME/.ssh/id_rsa.pub >> $HOME/.ssh/authorized_keys
+
+ssh localhosts
+
+sudo nano /etc/ssh/ssh_config
+#go to strict host key checking remove comment n change it to no#
+#go to etc/hosts and check details if required#
+
+sudo service ssh restart
+
+----------------------------create an image----------------------------
+#AMI is script that is cd of snapshot#
+Action>image>create image
+
+----------------------------create snapshot----------------------------
+#HDD snapshot of volume (HDD) it consist of all data#
+#Note: it gets created automatically once you creat AMI#
+>launch image with 2/4 instance
+
+--------------------------configure etc/hosts--------------------------
+private ip* n hostnames* #copy it#
+ssh nn
+sudo nano /etc/hosts *paste*
+ssh rm
+sudo nano /etc/hosts *paste*
+ssh dn
+
+ssh nn
+----------------------------install PDSH-------------------------------
+sudo apt-get install pdsh -y
+
+sudo nano /etc/genders
+nn
+rm
+dn
+
+pdsh -a uptime
+
+export PDSH_RCMD_TYPE=ssh (not required)
+
+arp
+
+nano /usr/local/hadoop/etc/hadoop/slaves
+nn
+rm
+dn
+
+---------------------configure Hadoop: (in nn)-------------------------
+************************************************************************
+#Update core-site.xml
+sudo sed -i '/<configuration>/,/<\/configuration>/d' /usr/local/hadoop/etc/hadoop/core-site.xml
+
+sudo su -c 'cat >> /usr/local/hadoop/etc/hadoop/core-site.xml <<EOL
+<configuration>
+  <property>
+    <name>fs.defaultFS</name>
+    <value>hdfs://nn:9000</value>
+  </property>
+</configuration>
+
+EOL'
+************************************************************************
+#Update hdfs-site.xml on name node# 
+
+mkdir -p /usr/local/hadoop/data/hdfs/namenode
+
+sudo sed -i '/<configuration>/,/<\/configuration>/d' /usr/local/hadoop/etc/hadoop/hdfs-site.xml
+
+sudo su -c 'cat >>/usr/local/hadoop/etc/hadoop/hdfs-site.xml <<EOL
+<configuration>
+  <property>
+    <name>dfs.replication</name>
+    <value>3</value>
+  </property>
+  <property>
+    <name>dfs.namenode.name.dir</name>
+    <value>file:///usr/local/hadoop/data/hdfs/namenode</value>
+  </property>
+  <property>
+    <name>dfs.datanode.name.dir</name>
+    <value>file:///usr/local/hadoop/data/hdfs/datanode</value>
+  </property>
+</configuration>
+EOL'
+***********************************************************************
+pdsh -a mkdir -p /usr/local/hadoop/data/hdfs/datanode
+
+#Update yarn-site.xml#
+
+sudo sed -i '/<configuration>/,/<\/configuration>/d' /usr/local/hadoop/etc/hadoop/yarn-site.xml
+
+sudo su -c 'cat >>/usr/local/hadoop/etc/hadoop/yarn-site.xml <<EOL
+<configuration>
+<!-- Site specific YARN configuration properties -->
+  <property>
+    <name>yarn.nodemanager.aux-services</name>
+    <value>mapreduce_shuffle</value>
+  </property>
+  <property>
+    <name>yarn.resourcemanager.hostname</name>
+    <value>rm</value>
+  </property>
+</configuration>
+EOL'
+************************************************************************
+#Update mapred-site.xml#
+
+cp  /usr/local/hadoop/etc/hadoop/mapred-site.xml.template /usr/local/hadoop/etc/hadoop/mapred-site.xml
+
+sudo sed -i '/<configuration>/,/<\/configuration>/d' /usr/local/hadoop/etc/hadoop/mapred-site.xml
+
+sudo su -c 'cat >>/usr/local/hadoop/etc/hadoop/mapred-site.xml <<EOL
+<configuration>
+  <property>
+    <name>mapreduce.jobtracker.address</name>
+    <value>rm:54311</value>
+  </property>
+  <property>
+    <name>mapreduce.framework.name</name>
+    <value>yarn</value>
+  </property>
+</configuration>
+EOL'
+************************************************************************
+sudo chown -R ubuntu:ubuntu $HADOOP_HOME
+
+#SCP all the files to ...dn...rm...#
+
+cd /usr/local/hadoop/etc/hadoop && scp core-site.xml mapred-site.xml yarn-site.xml slaves hdfs-site.xml rm:/usr/local/hadoop/etc/hadoop
+************************************************************************
+exit to nn
+
+#Format Namenode#
+
+hdfs namenode -format
+
+###LOOK FOR ERROR Message namenode has been successfully formatted.###
+
+start-dfs.sh
+***********************************************************************
+ssh rm
+$HADOOP_HOME/sbin/mr-jobhistory-daemon.sh start historyserver
+start-yarn.sh
+
+pdsh -a jps
+pdsh -w dn jps
+pdsh -w rm jps
+pdsh -w nn jps
+pdsh -a (press enter)
+pdsh>> ls
+************************************************************************
+jps
+
+-----------------------------#hdfs dfs -mkdir /user#-------------------
+hdfs dfs -mkdir -p /user/ubuntu
+hdfs dfs -ls /
+--------------------------Benchmarking---------------------------------
+hadoop jar /usr/local/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-*.jar teragen 500000 random-data
+hadoop jar /usr/local/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-*.jar terasort random-data sorted-data
+hadoop jar /usr/local/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-*-tests.jar TestDFSIO -write -nrFiles 10 -fileSize 5MB
+hadoop jar /usr/local/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-*-tests.jar TestDFSIO -read -nrFiles 10 -fileSize 5MB
+
+
+-------------------------Points to remember----------------------------
+This hadoop2 is enterprise "grade" hadoop, but not enterprise..
+
+remember the prerequiste of hadoop deployment.
+1) SElinux - is secured kernel, it takes only licenced applications, disable it install your required apps and re-enable it.
+2) IPV6 - disabling IPV6 as hadoop 2 supports only IPV4.
+3) IPtable - disabling internal firewalls.
+4) THC - disabling transparent hugepage compaction, defragmentation is not required for hadoop2, hadoop writes intermediate data on HDD, n hadoop2 doesnt want to defrag this intermediate data.
+5) Swappiness - disabling swappiness will load the program (acc to cloudera for linux, h2 is program) on ram and disable storing it on HDD. RAM is cheap hence we can take the risk of loading the program on the RAM directly with no time delay. making it 0 we can achieve speed.
+6) NTP server - syncronize time servers with hadoop clusters.
+7) root reservation - taking the reserved space from root for hadoop.
+R n Python are for data science.
+
+
+If you want oracle grant permission & install in all the machines with CLI : (learning python is required)
+sudo apt-get install -y python-software-properties debconf-utils
+
+echo "oracle-java8-installer shared/accepted-oracle-license-v1-1 select true" | sudo debconf-set-selections
+
+cloudera ports : to send the port numbers to network admin.
+
+{
+how to disable n enable selinux in redhat
+}
