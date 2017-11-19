@@ -1,0 +1,230 @@
+Pre-requiste :
+update server
+Download JVM
+Download Hadoop
+Set Hadoop enviorment
+
+*******************************Hive************************************
+jps
+
+start-all.sh
+
+hadoop namenode -format
+************************get the log file*******************************
+
+wget https://s3-ap-southeast-2.amazonaws.com/datasetz/eventlog.log
+
+hadoop fs -copyFromLocal /home/ubuntu/eventlog.log /user/ubuntu/serverlog.log
+
+hadoop fs -ls /user/ubuntu/
+
+************************************************************************
+wget http://www-us.apache.org/dist/hive/hive-1.2.2/apache-hive-1.2.2-bin.tar.gz
+
+tar -zxf apache-hive-1.2.2-bin.tar.gz
+
+sudo mv apache-hive-1.2.2-bin /usr/local/hive
+
+nano ~/.bashrc
+export HIVE_HOME=/usr/local/hive
+export PATH=$PATH:$HIVE_HOME/bin
+
+bash
+
+cd $HIVE_HOME/conf
+
+cp hive-env.sh.template hive-env.sh
+
+nano $HIVE_HOME/conf/hive-env.sh
+export HADOOP_HOME=/usr/local/hadoop
+
+cd
+
+hadoop fs -mkdir /user/hive/warehouse
+
+hadoop fs -mkdir /tmp
+
+hadoop fs -chmod   -R 777 /tmp
+
+hive 
+**if you get an error, check the error before proceeding*
+hive
+
+***************************create a database***************************
+Create database server;
+
+Show databases;
+
+Use server;
+
+create table serverdata1 (time STRING, ip STRING, country STRING, status STRING)
+                          ROW FORMAT DELIMITED FIELDS TERMINATED BY '|' LOCATION '/user/ubuntu/';
+
+select * from serverdata1 limit 10;
+
+SELECT * FROM serverdata1 where country = "IN" LIMIT 5;
+
+select * from serverdata1 where country = "GB" ;
+
+select * from serverdata1 where country = "IN" AND status = "ERROR";
+
+select * from serverdata1 where country = "FR" AND status = "ERROR";
+
+SELECT ip, time FROM Serverdata1; 
+
+SELECT DISTINCT  ip, time from serverdata1;
+
+SELECT DISTINCT  ip from serverdata1;
+
+SELECT DISTINCT * FROM serverdata1;
+
+#check on GUI *Public IP*:50070
+
+exit ;
+**************************wordcount via hive***************************
+create table doc(
+text string
+) row format delimited fields terminated by '\n' stored as textfile;
+
+load data inpath '/user/ubuntu/serverlog.log' overwrite into table doc;
+
+SELECT word, COUNT(*) FROM doc LATERAL VIEW explode(split(text, ' ')) lTable as word GROUP BY word;  
+
+***********************************Mapreduce JAVA**********************
+ls
+
+cat > WordCount.java
+*************************************Copy&Paste************************
+//package org.myorg;
+import java.io.IOException;
+import java.util.*;
+
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.conf.*;
+import org.apache.hadoop.io.*;
+import org.apache.hadoop.mapred.*;
+import org.apache.hadoop.util.*;
+
+public class WordCount {
+
+	public static class Map extends MapReduceBase implements Mapper<LongWritable, Text, Text, IntWritable> {
+		private final static IntWritable one = new IntWritable(1);
+		private Text word = new Text();
+
+		public void map(LongWritable key, Text value, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
+			String line = value.toString();
+			StringTokenizer tokenizer = new StringTokenizer(line);
+			while (tokenizer.hasMoreTokens()) {
+				word.set(tokenizer.nextToken());
+				output.collect(word, one);
+			}
+		}
+	}
+
+	public static class Reduce extends MapReduceBase implements Reducer<Text, IntWritable, Text, IntWritable> {
+		public void reduce(Text key, Iterator<IntWritable> values, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
+			int sum = 0;
+			while (values.hasNext()) {
+				sum += values.next().get();
+			}
+			output.collect(key, new IntWritable(sum));
+		}
+	}
+
+	public static void main(String[] args) throws Exception {
+		JobConf conf = new JobConf(WordCount.class);
+		conf.setJobName("wordcount");
+
+		conf.setOutputKeyClass(Text.class);
+		conf.setOutputValueClass(IntWritable.class);
+
+		conf.setMapperClass(Map.class);
+		//conf.setCombinerClass(Reduce.class);
+		conf.setReducerClass(Reduce.class);
+
+		conf.setInputFormat(TextInputFormat.class);
+		conf.setOutputFormat(TextOutputFormat.class);
+
+		FileInputFormat.setInputPaths(conf, new Path(args[0]));
+		FileOutputFormat.setOutputPath(conf, new Path(args[1]));
+
+		JobClient.runJob(conf);
+	}
+}
+
+***********************************************************************
+export CLASSPATH=/usr/local/hadoop/hadoop-core-1.2.1.jar
+
+mkdir wordcount_classes
+
+javac -d wordcount_classes/ WordCount.java
+
+cd wordcount_classes/
+
+ls
+
+cd
+
+jar -cvf wordcount.jar -C wordcount_classes/ .
+
+###create a nano file and load it on cluster###
+hadoop fs -put furquan .
+
+hadoop jar wordcount.jar WordCount  furquan result .
+
+hadoop fs -ls
+
+hadoop fs -get /user/ubuntu/result/part-00000 /home/ubuntu
+
+cat part-00000 
+
+sort -n -k2 part-00000 > result2
+
+cat result2
+******************************on your local server*********************
+
+scp -i *key* *file* ubuntu@*publicIP*:/home/ubuntu
+
+***********************************Pig**********************************
+
+wget https://archive.apache.org/dist/pig/pig-0.16.0/pig-0.16.0.tar.gz
+
+tar -zxf pig-0.16.0.tar.gz  
+
+sudo mv pig-0.16.0 /usr/local/pig
+
+export PIG_HOME=/usr/local/pig/
+
+export PATH=$PATH:$PIG_HOME/bin
+
+bash
+
+pig
+
+**************************running word count on pig********************
+
+lines = LOAD '/user/hive/warehouse/server.db/doc/serverlog.log' AS (line:chararray);
+
+#Also you can try any file :#
+
+lines = LOAD '/user/ubuntu/furquan' AS (line:chararray);
+
+##############please get the right path from GUI#######################
+
+words = FOREACH lines GENERATE FLATTEN(TOKENIZE(line)) as word;
+
+grouped = GROUP words BY word;
+
+wordcount = FOREACH grouped GENERATE group, COUNT(words);
+
+DUMP wordcount
+
+quit
+************************************************************************
+
+Try experimenting with pig with any file of your own.. all you have to do is change the link.. that's all...
+
+also check ngram of google for fun..
+
+
+
