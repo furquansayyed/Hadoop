@@ -1,0 +1,221 @@
+
+arp (address resolution protocol) to check the connections.
+
+if done 'ssh snn' DNS will not understanding your host name.
+
+to create a DNS we need FQDN (fully qualified domain name)
+
+sudo nano /etc/hosts
+
+*paste the private IPs and names*
+
+last time in singlenode we leveraged loopback host that is localhost.
+
+this time we'll work with real IPs
+
+###make sure you are in NN IP###
+
+go to instance and copy all the private IP's
+
+name the hosts.
+
+(tasktracker is virtual/logical, it runs with data node.)
+
+copy all the IP and hostnames and save it in gedit.
+
+arp- the default ip is virtual router.. 
+
+we can also paste public DNS from instance in hosts file if required for IP verifications.
+***********************************************************************
+get back to pune and send the key to the server.
+
+scp -i *key.pem* *key location* to ubuntu@*publicIP*:/home/ubuntu/.ssh (or.ssh)
+
+check cd .ssh
+
+ssh -i *key.pem* snn
+
+go back to nn by exit
+
+(PTR : in sudo nano /etc/passwd if there is no login in the end of username then the user will not able to login)
+************************************************************************
+nano .profile
+eval `ssh-agent` ssh-add /home/ubuntu/.ssh/*key*.pem
+(def- run the command and add the given path file)
+
+source .profile
+
+(PTR : in centos .profile can be config from etc folder)
+(PTR- all files in proc folders are on RAM)
+*********************************************************************
+ssh snn
+*got to all the instances and edit sudo nano /etc/host file and paste all the IP*
+
+*once pasted in all the hosts file.. you can go anywhere. make a to and from connection, every known_hosts will get added*
+
+sudo hostname nn (change the hostname for all) 
+
+exit and come back  to nn
+***********************************************************************
+source .profile (it will show that pem is added)
+send profile :
+scp .profile ubuntu@snn:/home/ubuntu/
+scp .profile ubuntu@jt:/home/ubuntu/
+scp .profile ubuntu@1dn:/home/ubuntu/
+scp .profile ubuntu@2dn:/home/ubuntu/
+scp .profile ubuntu@3dn:/home/ubuntu/
+
+
+**********************************************************************
+(PTR- -i (identifier) is not required as we have edited .profile file)
+
+send key:
+scp .ssh/*key.pem*  ubuntu@snn:/home/ubuntu/.ssh/
+scp .ssh/*key.pem*  ubuntu@jt:/home/ubuntu/.ssh/
+scp .ssh/*key.pem*  ubuntu@1dn:/home/ubuntu/.ssh/
+scp .ssh/*key.pem*  ubuntu@2dn:/home/ubuntu/.ssh/
+scp .ssh/*key.pem*  ubuntu@3dn:/home/ubuntu/.ssh/
+**********************************************************************
+
+(PTR- the reason it asking for 'yes' is because IPs yet to be added in hosts)
+
+type arp for to and fro connection confirmation.
+
+go back to nn
+
+(PTR- layer 1 OS, layer 2 JVM, layer 3 Hadoop, on resume mention worked with cluster management tools)
+*****************************DSH***************************************
+(install dancer shell, also helps you to do to n fro connections)
+sudo apt-get install dsh -y
+
+sudo nano /etc/dsh/machines.list
+paste :
+
+nn
+jt
+1dn
+2dn
+3dn
+snn
+
+dsh -a uptime (-a means all machines, to n fro connection)
+
+dsh -a sudo apt-get update
+
+dsh -a java -version
+
+dsh -a sudo apt-get install openjdk-7-jdk  -y
+
+dsh -a wget http://apache.mirror.gtcomm.net/hadoop/common/hadoop-1.2.1/hadoop-1.2.1.tar.gz
+
+dsh -a tar -xzf hadoop-1.2.1.tar.gz
+
+dsh -a sudo mv hadoop-1.2.1 /usr/local/hadoop
+
+dsh -a source ~/.profile
+On nn:
+***********************************************************************
+nano ~/.bashrc
+export HADOOP_PREFIX=/usr/local/hadoop/
+export PATH=$PATH:$HADOOP_PREFIX/bin
+export JAVA_HOME=/usr/lib/jvm/java-7-openjdk-amd64
+export PATH=$PATH:$JAVA_HOME
+
+scp .bashrc ubuntu@snn:/home/ubuntu
+scp .bashrc ubuntu@jt:/home/ubuntu
+scp .bashrc ubuntu@1dn:/home/ubuntu
+scp .bashrc ubuntu@2dn:/home/ubuntu
+scp .bashrc ubuntu@3dn:/home/ubuntu
+dsh -a exec bash ************************************************************************
+nano /usr/local/hadoop/conf/hadoop-env.sh
+
+export JAVA_HOME=/usr/lib/jvm/java-7-openjdk-amd64
+export HADOOP_OPTS=-Djava.net.preferIPV4Stack=true
+************************************************************************
+nano /usr/local/hadoop/conf/core-site.xml
+
+<property>
+<name>fs.default.name</name>
+<value>hdfs://nn:9000</value>
+</property>
+<property>
+<name>hadoop.tmp.dir</name>
+<value>/usr/local/hadoop/tmp</value>
+</property>
+************************************************************************
+nano /usr/local/hadoop/conf/hdfs-site.xml
+
+<property>
+<name>dfs.replication</name>
+<value>3</value>
+</property>
+<property> 
+<name>dfs.permissions</name> 
+<value>false</value> 
+</property>
+************************************************************************
+nano /usr/local/hadoop/conf/mapred-site.xml
+
+<property>
+<name>mapred.job.tracker</name>
+<value>hdfs://jt:9001</value>
+</property>
+
+=================== conf master n slaves in nn=========================
+nano /usr/local/hadoop/conf/masters
+snn
+
+ssh nn
+nano /usr/local/hadoop/conf/slaves (forexp nn & snn can be made slaves)
+1dn
+2dn
+3dn
+
+*********************copy xmls n slaves to all hosts*******************
+scp  hadoop-env.sh core-site.xml hdfs-site.xml mapred-site.xml slaves ubuntu@snn:/usr/local/hadoop/conf/
+
+scp  hadoop-env.sh core-site.xml hdfs-site.xml mapred-site.xml slaves ubuntu@jt:/usr/local/hadoop/conf/
+
+scp  hadoop-env.sh core-site.xml hdfs-site.xml mapred-site.xml slaves ubuntu@1dn:/usr/local/hadoop/conf/
+
+scp  hadoop-env.sh core-site.xml hdfs-site.xml mapred-site.xml slaves ubuntu@2dn:/usr/local/hadoop/conf/
+
+scp  hadoop-env.sh core-site.xml hdfs-site.xml mapred-site.xml slaves ubuntu@3dn:/usr/local/hadoop/conf/
+***********************************************************************
+ssh nn 
+
+dsh -a mkdir /usr/local/hadoop/tmp
+
+ssh nn (make sure you are on nn)
+
+hadoop namenode -format
+
+ssh jt
+start-mapred.sh
+
+ssh nn
+start-dfs.sh 
+
+-------------------------**check java process**------------------------
+dsh -a jps
+
+Points to remember :
+masters should get created & edited only in nn and should have snn in it.
+
+slaves should be on all the clusters.
+
+dsh -a jps will show all the running tracker.
+
+each cluster should have that particular name only.
+
+datanode will show with tasktracker.
+
+namenode format should always get executed on nn.
+
+resolving stuck nodes: if stuck something then either you kill or you create a file with localhost by going on masters. stop-dfs it will stop the unecessary nodes.
+***********************************************************************
+jar pi 1000
+***********************************************************************
+two ways to get rid of IPs in GUI :
+option 1 : windows server where you'll get browser you can check all the job tracker without entering IPs (recommended)
+option 2 : in the host remove all the private n enter public ip. but the drawbacks are whenever you restart the server IP wil chng.
